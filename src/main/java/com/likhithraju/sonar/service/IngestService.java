@@ -1,11 +1,13 @@
 package com.likhithraju.sonar.service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.likhithraju.sonar.dto.EventError;
 import com.likhithraju.sonar.dto.IngestResponse;
@@ -35,6 +37,7 @@ public class IngestService {
      * @param rawEvents
      * @return
      */
+    @Transactional 
     public IngestResponse ingest(String deviceId, List<JsonNode> rawEvents){
         long now = System.currentTimeMillis();
         List<Event> valid = new ArrayList<>();
@@ -55,7 +58,7 @@ public class IngestService {
                 errors.add(new EventError(i, e.getMessage()));
             }
         }
-
+        valid.sort(Comparator.comparingLong(Event::timestamp));
         int accepted = 0;
         if(!valid.isEmpty()){
             // 1 = inserted, 0 = row already existed (duplicate from an earlier request).

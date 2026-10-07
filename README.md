@@ -89,3 +89,42 @@ Expected Response:
     "errors":[]
 }
 ```
+
+## Design Notes
+
+**Schema and indexes**
+
+I have one table, `telemetry_event`, with one row per sensor reading: `device_id`, `ts` (epoch millis, BIGINT), then lat, lon, speed and the six accel/gyro values as `DOUBLE PRECISION`. Every column is `NOT NULL` because the spec says all fields are required.
+
+The primary key is `(device_id, ts)`, in that order. I didn't add any other index. Postgres builds a B-tree for the primary key, and putting `device_id` first means the summary query (`WHERE device_id = ? AND ts BETWEEN ? AND ?`) is a straight range scan on that same index. A second index would only add write cost on a table that gets a lot of inserts. I used `ts` for the column name because it's the event time, not the time the server received it.
+
+**Duplicate detection and concurrency**
+
+Duplicates are caught in two places:
+
+- Inside one batch, I keep a set of timestamps while validating. The first event with a given timestamp is kept and later ones count as duplicates.
+- Across requests, I let the database decide. The insert is `INSERT ... ON CONFLICT (device_id, ts) DO NOTHING`, and the driver tells me per row whether it was inserted (1) or skipped (0). Skipped rows are reported as duplicates.
+
+I deliberately don't do "check if it exists, then insert", because two requests could both pass the check and then both insert. With `ON CONFLICT`, the primary key makes the call. If two requests with the same event arrive at once, Postgres lets the first one commit and the second one sees the conflict and does nothing. One row is stored, one request reports it as accepted and the other as a duplicate.
+
+**What I'd change for production**
+
+I'd stop writing straight into one plain Postgres table. At 10-50 events per second per device, this table grows very fast, so I would partition it by time (Postgres native partitioning, or TimescaleDB) so old data can be dropped or archived by partition and the indexes stay small. The primary key already includes `ts`, so it works as a partitioned key. I'd also put a queue like Kafka or Kinesis between the API and the database, so a traffic spike gets buffered instead of hitting Postgres directly. The details are in [DESIGN.md](DESIGN.md).
+
+**Concurrency setup**
+
+- Each batch is sorted by timestamp before inserting. Two overlapping batches that insert the same keys in different orders can deadlock in Postgres, and a fixed order avoids that.
+- Requests run on virtual threads (`spring.threads.virtual.enabled`), and the connection pool size can be set with the optional `DATASOURCE_POOL_SIZE` variable (default 20).
+- `reWriteBatchedInserts=true` on the JDBC URL turns a batch into multi-row inserts.
+
+## Running the tests
+
+```bash
+./mvnw test
+```
+
+`IngestConcurrencyTest` starts a throwaway Postgres with Testcontainers (Docker must be running), sends the same batch from 32 threads at once and checks every event is stored exactly once. `SonarApplicationTests` needs the `DATASOURCE_*` variables exported.
+
+
+## Part -3 Notes
+See [DESIGN.md](DESIGN.md) for the system design write-up (Part 3).
