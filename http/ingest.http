@@ -1,0 +1,48 @@
+@base = http://localhost:8080/api/v1/telemetry
+@device = DVC-1029
+
+### happy-flow: fresh batch, both events should be accepted
+POST {{base}}/ingest
+Content-Type: application/json
+
+{
+  "device_id": "{{device}}",
+  "events": [
+    {"timestamp": 1730894521123, "lat": 12.9716, "lon": 77.5946, "speed_kmph": 42.5, "accel_x": 0.12, "accel_y": -0.03, "accel_z": 9.81, "gyro_x": 0.002, "gyro_y": -0.001, "gyro_z": 0.0},
+    {"timestamp": 1730894521173, "lat": 12.9716, "lon": 77.5947, "speed_kmph": 42.8, "accel_x": 0.14, "accel_y": -0.02, "accel_z": 9.80, "gyro_x": 0.001, "gyro_y": -0.001, "gyro_z": 0.0}
+  ]
+}
+
+### happy-flow: same batch again (a retry), nothing new gets stored, both come back as duplicates
+POST {{base}}/ingest
+Content-Type: application/json
+
+{
+  "device_id": "{{device}}",
+  "events": [
+    {"timestamp": 1730894521123, "lat": 12.9716, "lon": 77.5946, "speed_kmph": 42.5, "accel_x": 0.12, "accel_y": -0.03, "accel_z": 9.81, "gyro_x": 0.002, "gyro_y": -0.001, "gyro_z": 0.0},
+    {"timestamp": 1730894521173, "lat": 12.9716, "lon": 77.5947, "speed_kmph": 42.8, "accel_x": 0.14, "accel_y": -0.02, "accel_z": 9.80, "gyro_x": 0.001, "gyro_y": -0.001, "gyro_z": 0.0}
+  ]
+}
+
+### bad-request: no device_id, whole request is rejected with a 400
+POST {{base}}/ingest
+Content-Type: application/json
+
+{
+  "events": [
+    {"timestamp": 1730894521123, "lat": 12.9716, "lon": 77.5946, "speed_kmph": 42.5, "accel_x": 0.12, "accel_y": -0.03, "accel_z": 9.81, "gyro_x": 0.002, "gyro_y": -0.001, "gyro_z": 0.0}
+  ]
+}
+
+### bad-request: one good event and one with speed 999, still a 200 but the bad one is rejected
+POST {{base}}/ingest
+Content-Type: application/json
+
+{
+  "device_id": "DVC-2000",
+  "events": [
+    {"timestamp": 1730894521123, "lat": 12.9716, "lon": 77.5946, "speed_kmph": 42.5, "accel_x": 0.12, "accel_y": -0.03, "accel_z": 9.81, "gyro_x": 0.002, "gyro_y": -0.001, "gyro_z": 0.0},
+    {"timestamp": 1730894521173, "lat": 12.9716, "lon": 77.5947, "speed_kmph": 999, "accel_x": 0.14, "accel_y": -0.02, "accel_z": 9.80, "gyro_x": 0.001, "gyro_y": -0.001, "gyro_z": 0.0}
+  ]
+}
