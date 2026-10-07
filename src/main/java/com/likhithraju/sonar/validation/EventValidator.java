@@ -31,7 +31,7 @@ public class EventValidator {
      * @throws InvalidEventException
      */
     private double number(JsonNode node, String name) throws InvalidEventException {
-        JsonNode value = node.get(name);
+        JsonNode value = field(node, name);
         if(!value.isNumber()){
             throw new InvalidEventException(name + " must be numeric");
         }
