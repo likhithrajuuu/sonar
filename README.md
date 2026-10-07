@@ -29,7 +29,14 @@ git clone https://github.com/likhithrajuuu/sonar.git
 ### 3. Running the spring boot application
 Please go to the project directory in your terminal and run the following command to start the application
 
-``` ./mvnw spring-boot:run ```
+P.S : You have to create a database in your local machine
+```
+CREATE DATABASE IF NOT EXISTS sonar;
+```
+Start the application : 
+```
+./mvnw spring-boot:run
+```
 
 This will ensure the TomCat server is up and running on the port 8080 ! (default)
 
@@ -95,6 +102,23 @@ Expected Response:
 **Schema and indexes**
 
 I have one table, `telemetry_event`, with one row per sensor reading: `device_id`, `ts` (epoch millis, BIGINT), then lat, lon, speed and the six accel/gyro values as `DOUBLE PRECISION`. Every column is `NOT NULL` because the spec says all fields are required.
+
+```sql
+CREATE TABLE IF NOT EXISTS telemetry_event(
+    device_id VARCHAR(255) NOT NULL,
+    ts BIGINT NOT NULL,
+    lat DOUBLE PRECISION NOT NULL,
+    lon DOUBLE PRECISION NOT NULL,
+    speed_kmph DOUBLE PRECISION NOT NULL,
+    accel_x DOUBLE PRECISION NOT NULL,
+    accel_y DOUBLE PRECISION NOT NULL,
+    accel_z DOUBLE PRECISION NOT NULL,
+    gyro_x DOUBLE PRECISION NOT NULL,
+    gyro_y DOUBLE PRECISION NOT NULL,
+    gyro_z DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (device_id, ts)
+);
+```
 
 The primary key is `(device_id, ts)`, in that order. I didn't add any other index. Postgres builds a B-tree for the primary key, and putting `device_id` first means the summary query (`WHERE device_id = ? AND ts BETWEEN ? AND ?`) is a straight range scan on that same index. A second index would only add write cost on a table that gets a lot of inserts. I used `ts` for the column name because it's the event time, not the time the server received it.
 
