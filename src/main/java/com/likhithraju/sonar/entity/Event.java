@@ -12,5 +12,4 @@ public record Event(
     double gyroY,
     double gyroZ
 ) {
-    
 }
