@@ -85,6 +85,16 @@ So let's say the device measure how many times, holds the readings in the buffer
 
 **What breaks first without partitioning:** write throughput. One Postgres node handles roughly 50–100k rows/s with batching, and 300k is 3–6x that, with the WAL at around 50–100 MB/s. Second, deleting old data: 26 billion dead rows a day is more than vacuum can clear, while dropping a partition is instant.
 
+## 2. Failures and Load Behaviour
+### An event arrives 45 minutes late
+The only timestamp rule is "not more than 24 hours in the future", so a late event is totally valid and is stored under its own event time, not its arrival time. It lands in the previous hour's TimescaleDB chunk, which is still uncompressed, so the insert is cheap. Summaries are computed from the table on every request, so the next summary for that window includes the event(showing inclusion). The one already served isn't recalculated, and a cached copy in Redis can hide the event for up to its 30–60 s TTL. In production I would make the Redis key include a per-device version number that the consumer would increment when it writes, so a late event invalidates the cached summaries for that device at once.
+
+### The same batch is retried three times
+An event's identity is `(device_id, timestamp)`, not the batch it arrived in, so a retry that is re-batched differently is still caught. The insert is `ON CONFLICT (device_id, ts) DO NOTHING`. The first request returns `accepted: N`; the second and third return `accepted: 0, duplicates: N` with HTTP 200, and the table still has N rows. A retry costs N index lookups and no writes. In the Kinesis design the API answers before the database write, so the consumer does the same `ON CONFLICT` insrt and silently skips the repeats, and the API reports the events as queued instead of counting database duplicates.
+
+### Traffic increases 10x within one minute
+That is 50,000 requests/s and about 3 million event/s. Autoscaling takes 1–3 minutes, so the first minute would actually run on existing capacity. The API only validates and writes to Kinesis, so each request is cheap, and it's best I keep 2x CPU space. Let's say a 10x spike (about 700 MB/s) is more than the 70 shards take, so some writes fail. Rather than queue until timeout, the API then would actuallty return `429` with `Retry-After`, and devices back off with jitter or even the exponential timeoff. This is safe because phones buffer readings locally. The extra backlog is about 9 × 300,000 × 60 s ≈ 162 million events. With datbases sized for 2x steady load (600,000 row/s), the spare 300,000 rows/s clears it in about 9 minutes, which I can monitor through Kinesis . 
+
 ## 3. AWS implementation
 
 | Layer | Service | Why this and not the obvious alternative |
@@ -198,6 +208,10 @@ One Postgres node can realistically take 50 to 100k rows a second with batching,
 
 
 Plain mod 8 isn't great for growth, because going to 9 nodes remaps most devices. In production I'd use consistent hashing or a lot of virtual shards mapped onto the nodes, so adding a node only moves a small slice of data.
+
+
+
+
 Source :
 
 [1] https://aws.amazon.com/ec2/instance-types/r6i/
