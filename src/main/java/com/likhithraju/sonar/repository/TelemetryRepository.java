@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import com.likhithraju.sonar.dto.SummaryResponse;
 import com.likhithraju.sonar.entity.Event;
 
 @Repository
@@ -20,6 +21,14 @@ public class TelemetryRepository {
             (device_id, ts, lat, lon, speed_kmph, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (device_id, ts) DO NOTHING
+        """;
+
+    private static final String SUMMARY = """
+        SELECT COUNT(*) AS event_count,
+               AVG(speed_kmph) AS avg_speed,
+               MAX(SQRT(accel_x * accel_x + accel_y * accel_y + accel_z * accel_z)) AS max_accel
+        FROM telemetry_event
+        WHERE device_id = ? AND ts BETWEEN ? AND ?
         """;
 
     private final JdbcTemplate jdbc;
@@ -52,5 +61,16 @@ public class TelemetryRepository {
                 return events.size();
             }
         });
+    }
+
+    public SummaryResponse summarize(String deviceId, long from, long to) {
+        return jdbc.queryForObject(SUMMARY, (rs, rowNum) -> new SummaryResponse(
+            deviceId,
+            from,
+            to,
+            rs.getObject("avg_speed", Double.class),
+            rs.getObject("max_accel", Double.class),
+            rs.getInt("event_count")
+        ), deviceId, from, to);
     }
 }
