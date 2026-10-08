@@ -20,25 +20,27 @@ Run the following command in your terminal to get the project
 git clone https://github.com/likhithrajuuu/sonar.git
 ```
 
-### 2. Configuring the `.env` in you machine
-1. Please look for the file that is named as `.env.example`
-2. Duplicate that file in the same root folder and rename to `.env`
-3. Replace `your-database-name` with the actual database name in the `DATASOURCE_URL` field
-4. Replace the credentials of `DATASOURCE_USERNAME` and `DATASOURCE_PASSWORD` with your database credentials
+### 2. Create the database
+Postgres has no `CREATE DATABASE IF NOT EXISTS`, so create it once by hand:
+```bash
+createdb sonar
+```
+(or `psql postgres -c "CREATE DATABASE sonar;"`). The `telemetry_event` table is created automatically on startup from `schema.sql`.
 
-### 3. Running the spring boot application
-Please go to the project directory in your terminal and run the following command to start the application
+### 3. Configure the environment
+1. Copy `.env.example` to `.env`.
+2. Put your database name, username and password in it.
 
-P.S : You have to create a database in your local machine
+Spring Boot doesn't read `.env` files by itself, so load it into your terminal before starting the app:
+```bash
+set -a; source .env; set +a
 ```
-CREATE DATABASE IF NOT EXISTS sonar;
-```
-Start the application : 
-```
+
+### 4. Run the app
+```bash
 ./mvnw spring-boot:run
 ```
-
-This will ensure the TomCat server is up and running on the port 8080 ! (default)
+Tomcat starts on port 8080.
 
 
 ## Commands for testing the application(sample test cases)
@@ -96,6 +98,35 @@ Expected Response:
     "errors":[]
 }
 ```
+**3. Get a summary for a time window**
+
+Both `from` and `to` are epoch milliseconds and are inclusive.
+```bash
+curl "http://localhost:8080/api/v1/telemetry/summary?device_id=DVC-1029&from=1730894520000&to=1730894580000"
+```
+
+Expected response (after the two events above are ingested):
+```json
+{
+    "device_id": "DVC-1029",
+    "from": 1730894520000,
+    "to": 1730894580000,
+    "avg_speed_kmph": 42.65,
+    "max_accel_magnitude": 9.810...,
+    "event_count": 2
+}
+```
+
+**4. Empty window** (no events in range): returns `event_count: 0` and `null` for the two aggregates.
+```bash
+curl "http://localhost:8080/api/v1/telemetry/summary?device_id=DVC-1029&from=1&to=2"
+```
+
+**5. Bad input**: `from` greater than `to`, or a missing parameter, returns `400`.
+```bash
+curl -i "http://localhost:8080/api/v1/telemetry/summary?device_id=DVC-1029&from=10&to=5"
+```
+
 
 ## Design Notes
 
